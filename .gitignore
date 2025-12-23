@@ -13,3 +13,6 @@
 *.run
 pkg/
 src/
+zfs/
+*/*.patch
+*/config-*
