@@ -11,6 +11,9 @@
 ### Selecting CachyOS config
 : "${_cachy_config:=yes}"
 
+### Enable ccache for compilation
+: "${_use_ccache:=yes}"
+
 ### Selecting the CPU scheduler
 # ATTENTION - only one of the following values can be selected:
 # 'bore' - select 'Burst-Oriented Response Enhancer'
@@ -98,7 +101,7 @@
 # yes - enable -lto suffix
 # no - disable -lto suffix
 # https://github.com/CachyOS/linux-cachyos/issues/36
-: "${_use_lto_suffix:=no}"
+: "${_use_lto_suffix:=yes}"
 
 # Use suffix -gcc when requested by the user
 # Enabled by default to show the difference between LTO kernels and GCC kernels
@@ -185,7 +188,7 @@ pkgrel=2
 #_stable=${_major}
 _stable=${_major}-${_rcver}
 _srctag=cachyos-${_major}-${_rcver}-${_tagrel}
-_srcname=${_srctag}
+_srcname=linux-${_stable}
 pkgdesc='Linux Clang ThinLTO + AutoFDO  + Cachy Sauce Kernel by CachyOS with other patches and improvements - Release Candidate'
 _kernver="$pkgver-$pkgrel"
 _kernuname="${pkgver}-${_pkgsuffix}"
@@ -220,7 +223,7 @@ _nv_ver=610.43.03
 _nv_pkg="NVIDIA-Linux-x86_64-${_nv_ver}"
 _nv_open_pkg="NVIDIA-kernel-module-source-${_nv_ver}"
 source=(
-    "https://github.com/CachyOS/linux/releases/download/${_srctag}/${_srctag}.tar.gz"{,.asc}
+    "https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/linux-${_stable}.tar.gz"
     "config"
 )
 validpgpkeys=(
@@ -232,8 +235,15 @@ validpgpkeys=(
 if _is_lto_kernel; then
     makedepends+=(clang llvm lld)
     source+=("${_patchsource}/misc/dkms-clang.patch")
+
+    _cc=clang
+    if [ "$_use_ccache" = "yes" ]; then
+        makedepends+=(ccache)
+        _cc="ccache clang"
+    fi
+
     BUILD_FLAGS=(
-        CC=clang
+        CC="${_cc}"
         LD=ld.lld
         LLVM=1
         LLVM_IAS=1
@@ -296,6 +306,16 @@ export KBUILD_BUILD_TIMESTAMP="$(date -Ru${SOURCE_DATE_EPOCH:+d @$SOURCE_DATE_EP
 
 _die() { error "$@" ; exit 1; }
 
+_patch() {
+    local patch=$1
+    shift
+    if patch -Np1 --dry-run -i "$patch" "$@" > /dev/null; then
+        patch -Np1 -i "$patch" "$@"
+    else
+        warning "Failed to apply $(basename "$patch"), skipping to keep tree intact"
+    fi
+}
+
 prepare() {
     cd "$_srcname"
 
@@ -311,11 +331,21 @@ prepare() {
         [[ $src = *.patch ]] || continue
         echo "Applying patch $src..."
         if [[ "$patch" == "${_patchsource}"/misc/nvidia/* ]]; then
-            patch -Np1 < "../$src" -d "${srcdir}/${_nv_open_pkg}"
+            _patch "../$src" -d "${srcdir}/${_nv_open_pkg}"
         else
-            patch -Np1 < "../$src"
+            _patch "../$src"
         fi
     done
+
+    # Apply patches from patches directory
+    if [ -d "${startdir}/patches" ]; then
+        echo "Applying patches from patches directory..."
+        for src in "${startdir}/patches"/*.patch; do
+            [ -f "$src" ] || continue
+            echo "Applying patch $(basename "$src")..."
+            _patch "$src"
+        done
+    fi
 
     echo "Setting config..."
     cp ../config .config
@@ -818,7 +848,6 @@ for _p in "${pkgname[@]}"; do
     }"
 done
 
-b2sums=('918a0df4233a8da26b1ec092267bfe3425e433f20c5af8cf913306a22642b39a4851b595be7cd89de9904dfc75b67830fb07fc27280d503d847dac69c898c0fd'
-        'SKIP'
+b2sums=('SKIP'
         '9d4e9ae4379ea2ef7d1848917cbbfe2b10c633de8286009e08a1da4f5a08424de42ec546e0f8b98f30eb8aec61cf3c6ff400122faac54a5d0116459d6b3dd9a5'
-        'c992567bd7dd8553432be496ffa1c17e2f5ebe9c7edb51945cf977e1b742dd6517c210d8843bb82744ca705efd07f8027cd7dde41b50215ebd707a34aa81462e')
+        'SKIP')
